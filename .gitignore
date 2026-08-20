@@ -1,3 +1,4 @@
 venv/
-frontend2/config.js
+frontend/config.js
 data/raw/
+api/__pycache__/
