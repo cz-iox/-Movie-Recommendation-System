@@ -22,10 +22,14 @@ ratings = None
 tfidf_matrix = None
 cosine_sim = None
 algorithm = None
+knn_model = None
+knn_matrix = None
+user_item_matrix = None
 
 @app.on_event("startup")
 def load():
     global movies_content, ratings, tfidf_matrix, cosine_sim, algorithm,indices
+    global knn_matrix, user_item_matrix, knn_model
     
     movies_content = pd.read_pickle("models/movies_content.pkl")
     ratings = pd.read_pickle("models/ratings.pkl")
@@ -34,11 +38,64 @@ def load():
         tfidf_matrix = pickle.load(f)
     with open("models/algorithm_svd.pkl", "rb") as f:
         algorithm = pickle.load(f)
+    with open("models/knn_model.pkl", "rb") as f:
+        knn_model = pickle.load(f)
+    with open("models/knn_matrix.pkl", "rb") as f:
+        knn_matrix = pickle.load(f)
+    with open("models/user_item_matrix.pkl", "rb") as f:
+        user_item_matrix = pickle.load(f)
         
     cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
     indices = pd.Series(movies_content.index, index=movies_content["title"])
     print("All models loaded successfully! ")
 
+def get_surprise_svd(user_id: int, recommendations_n: int = 10):
+    all_movies_ids = movies_content["movieId"].unique()
+    rated_movies = ratings[ratings["userId"] == user_id]["movieId"].values
+    unrated_movies = [m for m in all_movies_ids if m not in rated_movies]
+    predictions = [algorithm.predict(uid=user_id, iid=movie_id) for movie_id in unrated_movies]
+    predictions.sort(key=lambda x: x.est, reverse=True)
+    top_predictions = predictions[:recommendations_n]
+    top_movie_ids = [pred.iid for pred in top_predictions]
+    return movies_content[movies_content["movieId"].isin(top_movie_ids)][["movieId", "title"]]
+
+
+def build_taste_vector(picked_movie_ids, rating_value=5.0):
+    taste_vector = pd.Series(0.0, index=user_item_matrix.columns)
+    taste_vector.loc[picked_movie_ids] = rating_value
+    return taste_vector
+
+def find_similar_users_filtered(taste_vector, picked_movie_ids, k=5, min_overlap=3, search_k=30):
+    taste_vector_2d = taste_vector.values.reshape(1, -1)
+    distances, indices_ = knn_model.kneighbors(taste_vector_2d, n_neighbors=search_k)
+    candidate_ids = knn_matrix.index[indices_[0]]
+    candidate_distances = distances[0]
+
+    overlap_counts = user_item_matrix.loc[candidate_ids, picked_movie_ids].notna().sum(axis=1)
+    valid_candidates = overlap_counts[overlap_counts >= min_overlap].index
+
+    final_users, final_distances = [], []
+    for uid, dist in zip(candidate_ids, candidate_distances):
+        if uid in valid_candidates:
+            final_users.append(uid)
+            final_distances.append(dist)
+        if len(final_users) == k:
+            break
+    return final_users, final_distances
+
+def get_coldstart_recommendations(filtered_users, distances, picked_movie_ids, top_n=10):
+    svd_rec_list = [get_surprise_svd(uid, recommendations_n=10) for uid in filtered_users if uid > 0]
+    movie_scores = {}
+    for user_recs, dist in zip(svd_rec_list, distances):
+        weight = 1 / (dist + 1e-6)
+        n = len(user_recs)
+        for rank, movie_id in enumerate(user_recs['movieId']):
+            rank_score = (n - rank)
+            movie_scores[movie_id] = movie_scores.get(movie_id, 0) + (rank_score * weight)
+    for movie_id in picked_movie_ids:
+        movie_scores.pop(movie_id, None)
+    ranked = sorted(movie_scores.items(), key=lambda x: x[1], reverse=True)
+    return ranked[:top_n]
 @app.get("/")
 def root():
     return {"message":"Movie Recommender API is running"}
@@ -79,21 +136,16 @@ class MovieOnBoardingRequest(BaseModel):
 
 @app.post("/recommendations/onboarding/movies")
 def onboarding_by_movies(request: MovieOnBoardingRequest):
-    score_total = Counter()
-    for title in request.titles:
-        if title not in indices:
-            continue
-        idx = indices[title]
-        sim_scores = list(enumerate(cosine_sim[idx]))
-        sim_scores = sorted(sim_scores, key= lambda x: x[1], reverse=True)
-        sim_scores = [s for s in sim_scores if s[0] != idx][:5]
-        for movie_idx, score in sim_scores:
-            score_total[movie_idx] += score
-    for title in request.titles:
-        if title in indices:
-            score_total.pop(indices[title], None)
-    top_indices = [idx for idx, _ in score_total.most_common(10)]
-    return movies_content.iloc[top_indices][["movieId", "title", "genres"]].to_dict(orient="records")
+    picked_movie_ids = [movies_content.loc[indices[title], "movieId"]for title in request.titles if title in indices]
+    if not picked_movie_ids:
+        raise HTTPException(status_code=404, detail="No matching movies found")
+    taste_vector = build_taste_vector(picked_movie_ids)
+    filtered_users, filtered_distances = find_similar_users_filtered(taste_vector, picked_movie_ids)
+    if not filtered_users:
+        raise HTTPException(status_code=404, detail="No similar users found — try picking more popular movies")
+    recs = get_coldstart_recommendations(filtered_users, filtered_distances, picked_movie_ids)
+    top_movie_ids = [movie_id for movie_id, _ in recs]
+    return movies_content[movies_content["movieId"].isin(top_movie_ids)][["movieId", "title", "genres"]].to_dict(orient="records")
 
 class GenresOnBoardingRequest(BaseModel):
     genres: list[str]
