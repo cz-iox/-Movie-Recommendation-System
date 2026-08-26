@@ -222,20 +222,17 @@
   </div>
 
   <!-- ================= Templates ================= -->
-  <template id="poster-card-template">
-    <article class="poster-card">
-      <div class="poster-frame">
-        <img class="poster-img" alt="" loading="lazy">
-        <div class="poster-fallback" hidden data-i18n="noImage">No image</div>
-        <div class="poster-rating" hidden>
-          <span class="star">★</span>
-          <span class="rating-value"></span>
-        </div>
-      </div>
-      <div class="poster-title"></div>
-      <div class="poster-meta"></div>
-    </article>
-  </template>
+<template id="poster-card-template">
+  <article class="poster-card">
+    <div class="poster-frame">
+      <img class="poster-img" alt="" loading="lazy">
+      <div class="poster-fallback" hidden data-i18n="noImage">No image</div>
+    </div>
+    <div class="poster-title"></div>
+    <div class="poster-meta"></div>
+    <div class="poster-rate-stars"></div>
+  </article>
+</template>
 
   <template id="genre-pill-template">
     <button class="genre-pill" type="button">

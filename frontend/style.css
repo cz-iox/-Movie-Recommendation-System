@@ -721,4 +721,25 @@ html[dir="rtl"] {
   .content {
     padding: 16px;
   }
+  /*=============== stars =========*/
+}
+.poster-rate-stars {
+  display: flex;
+  gap: 2px;
+  margin-top: 4px;
+}
+
+.rate-star {
+  background: none;
+  border: none;
+  color: var(--surface-border);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: var(--transition);
+}
+
+.rate-star.active {
+  color: #fbbf24;
 }
