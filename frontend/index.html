@@ -221,12 +221,25 @@
     </div>
   </div>
 
+  <!-- ================= Movie Details Modal ================= -->
+  <div id="movie-detail-modal" class="detail-modal-overlay" hidden>
+    <div class="detail-modal">
+      <button class="modal-close-btn" id="close-detail-modal" type="button" aria-label="Close">✕</button>
+      <img id="detail-poster" alt="" />
+      <h2 id="detail-title"></h2>
+      <p id="detail-release-runtime" class="detail-meta"></p>
+      <p id="detail-overview" class="detail-overview"></p>
+    </div>
+  </div>
+
+
   <!-- ================= Templates ================= -->
 <template id="poster-card-template">
   <article class="poster-card">
     <div class="poster-frame">
       <img class="poster-img" alt="" loading="lazy">
       <div class="poster-fallback" hidden data-i18n="noImage">No image</div>
+      <button class="poster-info-btn" title="Details">ℹ</button>
     </div>
     <div class="poster-title"></div>
     <div class="poster-meta"></div>

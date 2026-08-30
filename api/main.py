@@ -9,13 +9,20 @@ import os
 from fastapi.middleware.cors import CORSMiddleware
 from scripts.retrain_svd import retrain
 from apscheduler.schedulers.background import BackgroundScheduler
+import httpx
+from dotenv import load_dotenv
+
 
 
 scheduler = BackgroundScheduler()
 
+load_dotenv()
+TMDB_API_KEY = os.getenv("TMDB_API_KEY")
+
 app = FastAPI(title="Movie Recommender API")
 
 RATINGS_FILE = "data/new_ratings.csv"
+links_df = pd.read_csv("data/raw/links.csv")
 
 
 app.add_middleware(
@@ -50,6 +57,7 @@ def load():
     
     movies_content = pd.read_pickle("models/movies_content.pkl")
     ratings = pd.read_pickle("models/ratings.pkl")
+
     
     with open("models/tfidf_matrix.pkl", "rb") as f:
         tfidf_matrix = pickle.load(f)
@@ -142,7 +150,7 @@ def content_recommendations(movie_title:str):
     sim_scores = [s for s in sim_scores if s[0] !=idx]
     sim_scores = sim_scores[:10]
     movie_indices = [i[0] for i in sim_scores]
-    return movies_content["title"].iloc[movie_indices].tolist()
+    return movies_content[["movieId", "title"]].iloc[movie_indices].to_dict(orient="records")
 
 @app.get("/recommendations/user/{user_id}")
 def user_recommendations(user_id: int, n: int = 10):
@@ -219,6 +227,37 @@ def get_user_rating(user_token: str):
     user_ratings_df = user_ratings_df[user_ratings_df["userToken"] == user_token]
     user_ratings_df = user_ratings_df = user_ratings_df.sort_values("timestamp").drop_duplicates("movieId", keep="last")
     return dict(zip(user_ratings_df["movieId"], user_ratings_df["rating"]))
+
+movie_details_cache = {}
+
+@app.get("/movies/{movie_id}/details")
+async def get_movie_details(movie_id:int):
+    if movie_id in movie_details_cache:
+            return movie_details_cache[movie_id]
+    tmdb_id = links_df.loc[links_df["movieId"] == movie_id, "tmdbId"].values
+    
+    if len(tmdb_id) == 0 or pd.isna(tmdb_id[0]):
+        raise HTTPException(status_code=404, detail="No TMDB mapping for this movie")
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"https://api.themoviedb.org/3/movie/{int(tmdb_id[0])}", params={"api_key": TMDB_API_KEY, "language": "en-US"})
+    
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="TMDB fetch failed")
+    
+    data = resp.json()
+    result = {
+        "movieId": movie_id,
+        "title": data.get("title"),
+        "overview": data.get("overview"),
+        "release_date": data.get("release_date"),
+        "runtime": data.get("runtime"),
+        "poster_path": data.get("poster_path"),
+    }
+
+    movie_details_cache[movie_id] = result
+    return result
+
 
 @app.on_event("shutdown")
 def shutdown_scheduler():

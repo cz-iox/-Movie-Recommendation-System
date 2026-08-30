@@ -72,6 +72,7 @@
       movieSearchPlaceholder: "Search for a movie to add...",
       noImage: "No image", loading: "Loading...", noResults: "No movies found.",
       apiError: "Couldn't reach the recommender API. Is the server running?",
+      noDetailsAvailable: "No details available for this movie",
     },
     ar: {
       home: "الرئيسية", explore: "استكشاف", recommendations: "توصياتي",
@@ -98,6 +99,7 @@
       movieSearchPlaceholder: "ابحث عن فيلم لتضيفه...",
       noImage: "لا توجد صورة", loading: "جاري التحميل...", noResults: "لم يتم العثور على أفلام.",
       apiError: "تعذّر الوصول لسيرفر الـ API — تأكد إن الـ FastAPI شغال.",
+      noDetailsAvailable: "لا توجد تفاصيل متاحة لهذا الفيلم",
     },
   };
 
@@ -387,19 +389,17 @@
   //     Our API returns { movieId, title, genres? } — no poster/rating,
   //     so posters come from TMDB (async) and rating is hidden for now.
   // ============================================================
-  function renderMovieCard(movie, container) {
+function renderMovieCard(movie, container) {
     const card = dom.posterCardTemplate.content.firstElementChild.cloneNode(true);
     const img = card.querySelector(".poster-img");
     const fallback = card.querySelector(".poster-fallback");
     const starsContainer = card.querySelector(".poster-rate-stars");
-
+    const infoBtn = card.querySelector(".poster-info-btn");
     card.querySelector(".poster-title").textContent = movie.title;
     card.querySelector(".poster-meta").textContent = movie.genres ? movie.genres.replaceAll("|", " · ") : "";
-
     img.hidden = true;
     fallback.hidden = false;
     fallback.textContent = t("loading");
-
     getPosterUrl(movie.title).then((url) => {
       if (url) {
         img.src = url;
@@ -411,15 +411,20 @@
         fallback.textContent = t("noImage");
       }
     });
-
     if (movie.movieId != null) {
       const existingRating = state.userRatings[movie.movieId] || 0;
       renderRatingStars(starsContainer, movie.movieId, existingRating);
-    }
 
+      infoBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        showMovieDetails(movie.movieId);
+      });
+    } else {
+      infoBtn.hidden = true; 
+    }
     card.addEventListener("click", () => fetchSimilarMovies(movie.title));
     container.appendChild(card);
-  }
+}
 
   function renderRatingStars(container, movieId, initialValue = 0) {
     container.innerHTML = "";
@@ -483,16 +488,15 @@
     movies.forEach((m) => renderMovieCard(m, container));
   }
 
-  async function fetchSimilarMovies(movieTitle) {
+   async function fetchSimilarMovies(movieTitle) {
     dom.similarMovieName.textContent = movieTitle;
     dom.similarResults.innerHTML = `<p>${t("loading")}</p>`;
     dom.similarSection.hidden = false;
     dom.similarSection.scrollIntoView({ behavior: "smooth" });
 
     try {
-      // /recommendations/content/{title} returns an array of title strings
-      const titles = await getContentRecommendations(movieTitle);
-      renderRow(dom.similarResults, titles.map((title) => ({ title })));
+      const movies = await getContentRecommendations(movieTitle);
+      renderRow(dom.similarResults, movies);
     } catch (err) {
       dom.similarResults.innerHTML = `<p class="empty-hint">${t("apiError")}</p>`;
     }
@@ -633,8 +637,42 @@
     });
   }
 
+    // ============================================================
+  // 16. Movie Details Section
   // ============================================================
-  // 16. Persisting taste across visits (localStorage)
+  async function showMovieDetails(movieId) {
+    try {
+      const res = await fetch(`${API_BASE}/movies/${movieId}/details`);
+      if (!res.ok) {
+        alert(t("noDetailsAvailable"));
+        return;
+      }
+      const data = await res.json();
+      document.getElementById("detail-title").textContent = data.title;
+      document.getElementById("detail-overview").textContent = data.overview || t("noDetailsAvailable");
+      document.getElementById("detail-release-runtime").textContent =
+        `${data.release_date || ""} · ${data.runtime ? data.runtime + " min" : ""}`;
+      document.getElementById("detail-poster").src = data.poster_path
+        ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
+        : "";
+
+      document.getElementById("movie-detail-modal").hidden = false;
+    } catch (err) {
+      console.error("Failed to load movie details:", err);
+    }
+  }
+
+  document.getElementById("close-detail-modal").addEventListener("click", () => {
+    document.getElementById("movie-detail-modal").hidden = true;
+  });
+  document.getElementById("movie-detail-modal").addEventListener("click", (e) => {
+    if (e.target.id === "movie-detail-modal") {
+      e.target.hidden = true;
+    }
+  });
+
+  // ============================================================
+  // 17. Persisting taste across visits (localStorage)
   // ============================================================
   const TASTE_STORAGE_KEY = "cineMatchTaste";
   const USER_TOKEN_KEY = "cineMatchUserToken";
