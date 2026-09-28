@@ -38,7 +38,7 @@
     language: localStorage.getItem("cineMatchLanguage") || "en",
     currentView: "home",
     selectedGenres: new Set(),
-    selectedMovies: [], // [{ movieId, title, genres }]
+    selectedMovies: [], 
     onboardingStep: "mode",
     userTasteConfigured: false,
   };
@@ -71,7 +71,7 @@
       ofThree: "of 3 minimum selected", back: "Back", saveAndStart: "Save & Start",
       movieSearchPlaceholder: "Search for a movie to add...",
       noImage: "No image", loading: "Loading...", noResults: "No movies found.",
-      apiError: "Couldn't reach the recommender API. Is the server running?",
+      apiError: "Couldn't reach the recommender API. ",
       noDetailsAvailable: "No details available for this movie",
     },
     ar: {
@@ -188,8 +188,8 @@
   const searchMovies = (query, limit = 10) =>
     apiGet(`/movies/search?query=${encodeURIComponent(query)}&limit=${limit}`);
 
-  const getContentRecommendations = (movieTitle) =>
-    apiGet(`/recommendations/content/${encodeURIComponent(movieTitle)}`);
+  const getContentRecommendations = (movieTitle, userToken) =>
+  apiGet(`/recommendations/content/${encodeURIComponent(movieTitle)}${userToken ? `?userToken=${encodeURIComponent(userToken)}` : ""}`);
 
   const getOnboardingRecommendationsByMovies = (titles, userToken) =>
     apiPost(`/recommendations/onboarding/movies`, { titles, userToken });
@@ -487,20 +487,19 @@ function renderMovieCard(movie, container) {
     }
     movies.forEach((m) => renderMovieCard(m, container));
   }
-
-   async function fetchSimilarMovies(movieTitle) {
+async function fetchSimilarMovies(movieTitle) {
     dom.similarMovieName.textContent = movieTitle;
     dom.similarResults.innerHTML = `<p>${t("loading")}</p>`;
     dom.similarSection.hidden = false;
     dom.similarSection.scrollIntoView({ behavior: "smooth" });
-
     try {
-      const movies = await getContentRecommendations(movieTitle);
+      const userToken = localStorage.getItem(USER_TOKEN_KEY);
+      const movies = await getContentRecommendations(movieTitle, userToken);
       renderRow(dom.similarResults, movies);
     } catch (err) {
       dom.similarResults.innerHTML = `<p class="empty-hint">${t("apiError")}</p>`;
     }
-  }
+}
 
   // ============================================================
   // 13. Primary Search
@@ -557,21 +556,29 @@ function renderMovieCard(movie, container) {
     loadPersonalizedRecommendations();
   }
 
-  async function loadPersonalizedRecommendations() {
-    dom.foryouResults.innerHTML = `<p>${t("loading")}</p>`;
-    try {
-      const userToken = localStorage.getItem(USER_TOKEN_KEY);
-      let movies;
-      if (state.selectedMovies.length > 0) {
-        movies = await getOnboardingRecommendationsByMovies(state.selectedMovies.map((m) => m.title), userToken);
-      } else {
-        movies = await getOnboardingRecommendationsByGenres([...state.selectedGenres], userToken);
-      }
-      renderRow(dom.foryouResults, movies); 
-    } catch (err) {
-      dom.foryouResults.innerHTML = `<p class="empty-hint">${t("apiError")}</p>`;
-    }
+async function loadPersonalizedRecommendations() {
+  dom.foryouResults.innerHTML = `<p>${t("loading")}</p>`;
+  const userToken = localStorage.getItem(USER_TOKEN_KEY);
+
+  try {
+    const movies = await apiGet(`/recommendations/for-token/${userToken}`);
+    renderRow(dom.foryouResults, movies);
+    return;
+  } catch (err) {
   }
+
+  try {
+    let movies;
+    if (state.selectedMovies.length > 0) {
+      movies = await getOnboardingRecommendationsByMovies(state.selectedMovies.map((m) => m.title), userToken);
+    } else {
+      movies = await getOnboardingRecommendationsByGenres([...state.selectedGenres], userToken);
+    }
+    renderRow(dom.foryouResults, movies);
+  } catch (err) {
+    dom.foryouResults.innerHTML = `<p class="empty-hint">${t("apiError")}</p>`;
+  }
+}
 
   // ============================================================
   // 15. Event Binding & Init
@@ -602,7 +609,7 @@ function renderMovieCard(movie, container) {
 
     dom.genresConfirmBtn.addEventListener("click", () => {
       if (state.selectedGenres.size >= 3) {
-        state.selectedMovies = []; // genres and movies are mutually exclusive modes
+        state.selectedMovies = [];
         saveTasteToStorage();
         updateTasteChipsUI();
         closeModal();

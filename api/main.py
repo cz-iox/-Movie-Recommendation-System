@@ -35,11 +35,11 @@ app.add_middleware(
 movies_content = None
 ratings = None 
 tfidf_matrix = None
-cosine_sim = None
 algorithm = None
 knn_model = None
-knn_matrix = None
-user_item_matrix = None
+user_item_sparse = None
+user_id_map = None
+movie_id_to_idx = None
 
 def scheduled_retrain():
     global algorithm
@@ -52,30 +52,31 @@ def scheduled_retrain():
 
 @app.on_event("startup")
 def load():
-    global movies_content, ratings, tfidf_matrix, cosine_sim, algorithm,indices
-    global knn_matrix, user_item_matrix, knn_model
+    global movies_content, ratings, tfidf_matrix, algorithm, indices
+    global knn_model, user_item_sparse, user_id_map, movie_id_to_idx
     
     movies_content = pd.read_pickle("models/movies_content.pkl")
     ratings = pd.read_pickle("models/ratings.pkl")
 
-    
     with open("models/tfidf_matrix.pkl", "rb") as f:
         tfidf_matrix = pickle.load(f)
     with open("models/algorithm_svd.pkl", "rb") as f:
         algorithm = pickle.load(f)
     with open("models/knn_model.pkl", "rb") as f:
         knn_model = pickle.load(f)
-    with open("models/knn_matrix.pkl", "rb") as f:
-        knn_matrix = pickle.load(f)
-    with open("models/user_item_matrix.pkl", "rb") as f:
-        user_item_matrix = pickle.load(f)
+    with open("models/user_item_sparse.pkl", "rb") as f:
+        user_item_sparse = pickle.load(f)
+    with open("models/user_id_map.pkl", "rb") as f:
+        user_id_map = pickle.load(f)
+    with open("models/movie_id_to_idx.pkl", "rb") as f:
+        movie_id_to_idx = pickle.load(f)
         
-    cosine_sim = cosine_similarity(tfidf_matrix, tfidf_matrix)
     indices = pd.Series(movies_content.index, index=movies_content["title"])
     print("All models loaded successfully! ")
-    scheduler.add_job( scheduled_retrain, "interval", hours=24, id="retrain_svd_job")
+    scheduler.add_job( scheduled_retrain, "interval", minutes=2, id="retrain_svd_job")
     scheduler.start()
     print("Retrain scheduler started — will run every 24 hours")
+
 def get_surprise_svd(user_id: int, recommendations_n: int = 10):
     all_movies_ids = movies_content["movieId"].unique()
     rated_movies = ratings[ratings["userId"] == user_id]["movieId"].values
@@ -88,23 +89,26 @@ def get_surprise_svd(user_id: int, recommendations_n: int = 10):
 
 
 def build_taste_vector(picked_movie_ids, rating_value=5.0):
-    taste_vector = pd.Series(0.0, index=user_item_matrix.columns)
-    taste_vector.loc[picked_movie_ids] = rating_value
-    return taste_vector
+    n_movies = user_item_sparse.shape[1]
+    col_idx = [movie_id_to_idx[m] for m in picked_movie_ids if m in movie_id_to_idx]
+    data = [rating_value] * len(col_idx)
+    row_idx = [0] * len(col_idx)
+    from scipy.sparse import csr_matrix
+    return csr_matrix((data, (row_idx, col_idx)), shape=(1, n_movies))
 
 def find_similar_users_filtered(taste_vector, picked_movie_ids, k=5, min_overlap=3, search_k=30):
-    taste_vector_2d = taste_vector.values.reshape(1, -1)
-    distances, indices_ = knn_model.kneighbors(taste_vector_2d, n_neighbors=search_k)
-    candidate_ids = knn_matrix.index[indices_[0]]
+    distances, indices_ = knn_model.kneighbors(taste_vector, n_neighbors=search_k)
+    candidate_idx = indices_[0]
     candidate_distances = distances[0]
 
-    overlap_counts = user_item_matrix.loc[candidate_ids, picked_movie_ids].notna().sum(axis=1)
-    valid_candidates = overlap_counts[overlap_counts >= min_overlap].index
+    picked_cols = [movie_id_to_idx[m] for m in picked_movie_ids if m in movie_id_to_idx]
+    candidate_rows = user_item_sparse[candidate_idx][:, picked_cols]
+    overlap_counts = (candidate_rows != 0).sum(axis=1).A1
 
     final_users, final_distances = [], []
-    for uid, dist in zip(candidate_ids, candidate_distances):
-        if uid in valid_candidates:
-            final_users.append(uid)
+    for i, (idx_, dist) in enumerate(zip(candidate_idx, candidate_distances)):
+        if overlap_counts[i] >= min_overlap:
+            final_users.append(user_id_map[idx_])
             final_distances.append(dist)
         if len(final_users) == k:
             break
@@ -136,21 +140,26 @@ def root():
     return {"message":"Movie Recommender API is running"}
 
 @app.get("/movies/search")
-def search_movies(query: str,  limit: int=10 ):
+def search_movies(query: str, limit: int = 10):
     results = movies_content[movies_content["title"].str.contains(query, case=False, na=False)]
-    return results[["movieId","title","genres"]].head(limit).to_dict(orient="records")
+    results = results.sort_values("weighted_rating", ascending=False)
+    return results[["movieId","title","genres","weighted_rating"]].head(limit).to_dict(orient="records")
 
 @app.get("/recommendations/content/{movie_title}")
-def content_recommendations(movie_title:str):
+def content_recommendations(movie_title: str, userToken: str | None = None):
     if movie_title not in indices:
         raise HTTPException(status_code=404, detail="Movie not found")
     idx = indices[movie_title]
-    sim_scores = list(enumerate(cosine_sim[idx]))
+    sim_row = cosine_similarity(tfidf_matrix[idx], tfidf_matrix).flatten()
+    sim_scores = list(enumerate(sim_row))
     sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)
-    sim_scores = [s for s in sim_scores if s[0] !=idx]
-    sim_scores = sim_scores[:10]
+    sim_scores = [s for s in sim_scores if s[0] != idx]
     movie_indices = [i[0] for i in sim_scores]
-    return movies_content[["movieId", "title"]].iloc[movie_indices].to_dict(orient="records")
+
+    rated_ids = get_rated_movie_ids(userToken)
+    candidates = movies_content[["movieId", "title"]].iloc[movie_indices]
+    candidates = candidates[~candidates["movieId"].isin(rated_ids)]
+    return candidates.head(10).to_dict(orient="records")
 
 @app.get("/recommendations/user/{user_id}")
 def user_recommendations(user_id: int, n: int = 10):
@@ -165,7 +174,33 @@ def user_recommendations(user_id: int, n: int = 10):
     top_predictions = predictions[:n]
     top_movie_ids = [pred.iid for pred in top_predictions]
     return movies_content[movies_content["movieId"].isin(top_movie_ids)][["movieId", "title"]].to_dict(orient="records")
-    
+
+@app.get("/recommendations/for-token/{user_token}")
+def user_recommendations_by_token(user_token: str, n: int = 10):
+    if not os.path.isfile("models/token_to_userid.pkl"):
+        raise HTTPException(status_code=404, detail="No trained model with new users yet — run a retrain first")
+
+    with open("models/token_to_userid.pkl", "rb") as f:
+        token_to_userid = pickle.load(f)
+
+    if user_token not in token_to_userid:
+        raise HTTPException(
+            status_code=404,
+            detail="User not yet included in a trained model — try again after the next retrain"
+        )
+
+    user_id = token_to_userid[user_token]
+    all_movies_ids = movies_content["movieId"].unique()
+    rated_ids = get_rated_movie_ids(user_token)
+    unrated_movies = [m for m in all_movies_ids if m not in rated_ids]
+
+    predictions = [algorithm.predict(uid=user_id, iid=movie_id) for movie_id in unrated_movies]
+    predictions.sort(key=lambda x: x.est, reverse=True)
+    top_predictions = predictions[:n]
+    top_movie_ids = [p.iid for p in top_predictions]
+
+    return movies_content[movies_content["movieId"].isin(top_movie_ids)][["movieId", "title"]].to_dict(orient="records")
+
 class MovieOnBoardingRequest(BaseModel):
     titles: list[str]
     userToken: str | None = None
@@ -182,7 +217,7 @@ def onboarding_by_movies(request: MovieOnBoardingRequest):
         raise HTTPException(status_code=404, detail="No similar users found — try picking more popular movies")
     recs = get_coldstart_recommendations(filtered_users, filtered_distances, picked_movie_ids, top_n=25)
     rated_ids = get_rated_movie_ids(request.userToken)
-    top_movie_ids = [movie_id for movie_id, _ in recs if movie_id not in rated_ids][:10]  # نرجع بس أول 10 بعد الفلترة
+    top_movie_ids = [movie_id for movie_id, _ in recs if movie_id not in rated_ids][:10]
 
     return movies_content[movies_content["movieId"].isin(top_movie_ids)][["movieId", "title", "genres"]].to_dict(orient="records")
 
