@@ -2,13 +2,13 @@
 
 A full-stack movie recommendation system built from scratch as a learning project — from raw MovieLens data to a working web app with a Python/scikit-learn backend and a vanilla JS frontend.
 
-The goal wasn't just to ship a working recommender, but to actually understand why each piece works: why TF-IDF beats a plain word count, why a naive rating average is misleading, why SVD needs mean-centering, why a "cold start" user breaks a collaborative filtering model, and why a 25-million-rating dataset forces you to rethink data structures that worked fine at 100k rows. Every design decision below came out of hitting a real bug or a real limitation first, then fixing it.
+The goal wasn't just to ship a working recommender, but to actually understand why each piece works: why TF-IDF beats a plain word count, why a naive rating average is misleading, why SVD needs mean-centering, why a "cold start" user breaks a collaborative filtering model, and why a 33-million-rating dataset forces you to rethink data structures that worked fine at 100k rows. Every design decision below came out of hitting a real bug or a real limitation first, then fixing it.
 
 ## Features
 
 - **Search** — find any movie in the MovieLens catalog by title
 - **Content-Based Recommendations** — click a movie, get similar ones based on genre (TF-IDF + on-demand cosine similarity), excluding movies you've already rated
-- **Personalized Recommendations** — SVD-based collaborative filtering trained on 25M+ real user ratings, continuously retrained on new user activity; new (token-based) users get real SVD-driven recommendations once they've been through a retrain cycle
+- **Personalized Recommendations** — SVD-based collaborative filtering trained on 33M+ real user ratings, continuously retrained on new user activity; new (token-based) users get real SVD-driven recommendations once they've been through a retrain cycle
 - **New-user onboarding (KNN cold-start)** — pick 3+ movies, and the system maps your taste to the most similar existing MovieLens users (via a sparse-matrix KNN model, filtered by a minimum rating-overlap threshold to avoid spurious matches) and borrows their SVD recommendations, weighted by similarity
 - **Genre-based onboarding** — pick 3+ genres and get instant recommendations, no rating history required
 - **Rate movies** — 1-5 star rating on any movie card with a real movieId; ratings sync from the server so they persist across page reloads and devices, and already-rated movies are excluded from every recommendation surface (For You, same-vibe, onboarding)
@@ -22,7 +22,7 @@ The goal wasn't just to ship a working recommender, but to actually understand w
 
 | Layer | Technique | Why |
 |---|---|---|
-| Content-Based | TF-IDF over genres, cosine similarity computed on demand for a single movie row | Works for any movie, even ones with almost no ratings — and avoids ever materializing a full movie × movie similarity matrix, which is unaffordable at ~62,000 movies |
+| Content-Based | TF-IDF over genres, cosine similarity computed on demand for a single movie row | Works for any movie, even ones with almost no ratings — and avoids ever materializing a full movie × movie similarity matrix, which is unaffordable at ~86,000 movies |
 | Collaborative Filtering | scikit-surprise SVD, periodically retrained on the full ratings set | Captures taste patterns genres can't explain (e.g. users who loved Taxi Driver also loved Casablanca); retraining lets it learn from real usage instead of staying frozen on the original dataset |
 | Cold Start — movie picks | KNN over a sparse user-item matrix (cosine distance) to find the most similar existing users, filtered by minimum rating overlap so a match isn't based on 1-2 coincidental shared ratings, then a distance-weighted vote over their SVD recommendations | New users have no rating history for SVD to work with directly — this borrows the taste of real users who *do* have one |
 | Cold Start — genre picks | Content-Based genre filtering ranked by a Bayesian weighted rating | Fallback for users who'd rather pick genres than specific movies |
@@ -35,7 +35,7 @@ The goal wasn't just to ship a working recommender, but to actually understand w
 **Data & ML:** Python, Pandas, NumPy, SciPy (sparse matrices), scikit-learn, scikit-surprise, APScheduler
 **Backend:** FastAPI, Uvicorn, httpx, python-dotenv
 **Frontend:** HTML, CSS, vanilla JavaScript (no framework)
-**Dataset:** MovieLens ml-25m (~25 million ratings, ~62,000 movies)
+**Dataset:** MovieLens ml-latest (~33 million ratings, ~86,000 movies)
 **Posters & Plot Data:** TMDB API
 
 ## Project Structure
@@ -74,9 +74,9 @@ pip install -r requirements.txt
 ```
 
 ### 2. Get the dataset
-Download `ml-25m.zip` from grouplens.org/datasets/movielens, unzip it, and place `movies.csv`, `ratings.csv`, `tags.csv`, `links.csv` into `data/raw/`.
+Download `ml-latest.zip` from grouplens.org/datasets/movielens, unzip it, and place `movies.csv`, `ratings.csv`, `tags.csv`, `links.csv` into `data/raw/`.
 
-> This project originally ran on `ml-latest-small` (~100k ratings) and was upgraded to `ml-25m` (~25M ratings) for a more realistic scale. `ml-25m` needs sparse-matrix handling throughout to run comfortably on an 8GB-RAM machine — see the notes under Challenges below if adapting this further (e.g. to the full `ml-latest` dataset).
+> This project originally ran on `ml-latest-small` (~100k ratings) and was upgraded to `ml-latest` (~33M ratings) for a more realistic scale. `ml-latest` needs sparse-matrix handling throughout to run comfortably on an 8GB-RAM machine — see the notes under Challenges below if adapting this further. Note that `ml-latest` is a rolling snapshot that GroupLens updates over time, so exact counts and results may differ slightly depending on when you download it.
 
 ### 3. Generate the trained models
 Open the notebook in `notebooks/` in Jupyter and run all cells top to bottom (Restart & Run All, not a partial re-run — several cells depend on execution order). This performs the EDA, cleans the data, builds the TF-IDF matrix, trains the SVD model on the full rating set, builds the sparse user-item matrix and KNN cold-start model, and saves everything into `models/` as `.pkl` files — the API depends on these existing before it can start.
@@ -85,7 +85,7 @@ Open the notebook in `notebooks/` in Jupyter and run all cells top to bottom (Re
 jupyter notebook
 ```
 
-Expect this to take a while at `ml-25m` scale — SVD training alone can take upwards of 10 minutes depending on hardware.
+Expect this to take a while at `ml-latest` scale — SVD training alone can take upwards of 10 minutes depending on hardware.
 
 ### 4. Set up your TMDB API key (used by both backend and frontend)
 Create a `.env` file in the project root (same folder as `requirements.txt`):
@@ -98,7 +98,7 @@ This powers the backend's `/movies/{movie_id}/details` endpoint. Make sure `.env
 ```bash
 uvicorn api.main:app --reload
 ```
-Visit `http://127.0.0.1:8000/docs` for interactive API docs (Swagger UI). Startup takes noticeably longer than it did on `ml-latest-small` — it's loading a 25M-row ratings table and a model trained on it. On startup, the API also starts a background job that retrains the SVD model every 24 hours on any ratings submitted through the app.
+Visit `http://127.0.0.1:8000/docs` for interactive API docs (Swagger UI). Startup takes noticeably longer than it did on `ml-latest-small` — it's loading a 33M-row ratings table and a model trained on it. On startup, the API also starts a background job that retrains the SVD model every 24 hours on any ratings submitted through the app.
 
 ### 6. Set up the frontend
 Copy `frontend/config.example.js` to `frontend/config.js` and add your own TMDB API key (used client-side for poster lookups):
@@ -144,7 +144,7 @@ Building this surfaced a lot of bugs and design questions that taught me more th
 - **Two unrelated features silently shared one CSS class name** — the movie-details modal was first built reusing the onboarding modal's `.modal` / `.hidden` classes, colliding with its styling and layout assumptions and producing a squashed, off-center popup. Fixed by giving it its own `.detail-modal-overlay` / `.detail-modal` classes and switching to the native `hidden` attribute (matching how the rest of the app already toggles modals).
 - **Content-based recommendations had no `movieId`, and no rated-movie filtering at all** — the "same vibe" results only ever returned movie titles as plain strings, with no way to exclude already-rated movies. Fixed by changing `/recommendations/content/{movie_title}` to return `{movieId, title}` objects and accept an optional `userToken` query param to filter out rated movies, same as the onboarding endpoints.
 - **A trained SVD model already "knows" a new user, but nothing could reach that knowledge** — after a retrain, a browser-token user's ratings get mapped to a real numeric userId and folded into the SVD model, but the only user-recommendations endpoint looked them up in the *original* static `ratings` table by numeric ID, which never contains token-based users. Realized the retrain script was already saving the missing piece (`token_to_userid.pkl`) but nothing read it. Fixed by adding `/recommendations/for-token/{user_token}`, which loads the map fresh from disk on every call (so it always reflects the latest retrain without needing a server restart) and falls through to a 404 the frontend already knows how to catch and fall back from.
-- **Upgrading to `ml-25m` broke every "just materialize the full matrix" assumption at once** — going from ~9,700 to ~62,000 movies made a full movie × movie cosine similarity matrix (~3.8 billion cells) and a dense user × movie matrix (~162,000 × 62,000) both infeasible on 8GB of RAM. Fixed by computing content similarity on demand for a single movie row instead of precomputing the whole matrix, and by rebuilding the user-item matrix, its overlap counts, and the KNN cold-start logic entirely on `scipy.sparse` structures with explicit `userId`/`movieId` ↔ matrix-index maps, instead of a pandas `pivot_table` and `.loc[]` indexing.
+- **Upgrading to `ml-latest` broke every "just materialize the full matrix" assumption at once** — going from ~9,700 to ~86,000 movies made a full movie × movie cosine similarity matrix (~7.5 billion cells) and a dense user × movie matrix (~331,000 × 86,000) both infeasible on 8GB of RAM. Fixed by computing content similarity on demand for a single movie row instead of precomputing the whole matrix, and by rebuilding the user-item matrix, its overlap counts, and the KNN cold-start logic entirely on `scipy.sparse` structures with explicit `userId`/`movieId` ↔ matrix-index maps, instead of a pandas `pivot_table` and `.loc[]` indexing.
 - **A leftover exploratory cell broke `Run All`** — an early duplicate TF-IDF cell (left over from initial development, before `movies_content` existed yet) executed *before* the cell that actually defines `movies_content`, causing a `NameError` on any full top-to-bottom notebook run even though the notebook worked fine when cells were run out of order by hand during development. A same-shaped issue existed with a custom SVD-via-`svds` exploration block that was never the model actually used in production but still referenced now-removed dense variables. Fixed by deleting both once it was clear neither fed anything the saved `.pkl` files or the API depended on.
 - **A relative-path notebook only works from its own directory** — CSVs loaded fine when the notebook's working directory was the project root, but silently pointed at the wrong (nonexistent) folder once opened from inside `notebooks/`. `os.getcwd()` made the mismatch obvious; fixed by prefixing all data/model paths in the notebook with `../`.
 
@@ -154,14 +154,14 @@ Building this surfaced a lot of bugs and design questions that taught me more th
 - **Anonymous identity has no cross-device sync path yet:** the UUID token lives in browser `localStorage`, so clearing browser data, using a different browser, or switching devices starts a fresh identity with no rating history.
 - **Genre-only content model:** recommendations are based purely on genre overlap, not plot, cast, or themes — though plot summaries are now available on-demand via the movie detail view, they aren't yet fed into the recommendation model itself.
 - **No live deployment yet:** the app currently runs locally only; the scheduler only retrains while the server process is running.
-- **Startup is noticeably slower at `ml-25m` scale:** loading the ratings table, the trained SVD model, and the sparse matrices at process startup takes longer than it did on `ml-latest-small`; not yet profiled/optimized beyond confirming it's a one-time cost at boot, not a per-request one.
+- **Startup is noticeably slower at `ml-latest` scale:** loading the ratings table, the trained SVD model, and the sparse matrices at process startup takes longer than it did on `ml-latest-small`; not yet profiled/optimized beyond confirming it's a one-time cost at boot, not a per-request one.
 
 ## Future Improvements
 
 - Feed TMDB plot summaries into the content-based model itself (TF-IDF over text + genres, not just genres) for richer similarity scoring
 - A `/trending` endpoint and Docker + cloud deployment
 - A proper account system for cross-device identity, if login is ever added
-- Profile and reduce the ml-25m startup time (e.g. lazy-loading the static `ratings` table, which is only needed by the legacy numeric-userId endpoint)
+- Profile and reduce the ml-latest startup time (e.g. lazy-loading the static `ratings` table, which is only needed by the legacy numeric-userId endpoint)
 
 ## License
 
