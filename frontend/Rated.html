@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CineMatch | Rated Movies</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <div class="app-shell">
+
+    <!-- ================= Sidebar ================= -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">▶</span>
+        <div>
+          <div class="brand-name">CineMatch</div>
+          <div class="brand-sub">MOVIE RECOMMENDER</div>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button type="button" class="nav-item" data-view="home" onclick="window.location.href='index.html'">
+          <span class="nav-icon">🏠</span>
+          <span data-i18n="home">Home</span>
+        </button>
+        <button type="button" class="nav-item" data-view="foryou" onclick="window.location.href='index.html'">
+          <span class="nav-icon">🎯</span>
+          <span data-i18n="recommendations">For You</span>
+        </button>
+        <button type="button" class="nav-item active" data-view="ratedsec" onclick="window.location.href='Rated.html'">
+          <span class="nav-icon">⭐</span>
+          <span data-i18n="ratedMovies">Rated Movies</span>
+        </button>
+      </nav>
+
+      <!-- Taste Profile -->
+      <div class="taste-profile">
+        <div class="taste-label" data-i18n="favoriteGenres">
+          YOUR FAVORITE GENRES
+        </div>
+        <div class="taste-chips" id="taste-chips">
+          <span class="chip muted" data-i18n="noGenres">
+            No preferences set yet
+          </span>
+        </div>
+        <button type="button" class="link-btn" id="edit-taste-btn" data-i18n="editPreferences">
+          Edit preferences
+        </button>
+      </div>
+    </aside>
+
+    <!-- ================= Main ================= -->
+    <div class="main">
+
+      <!-- Topbar -->
+      <header class="topbar">
+        <form class="topbar-search" id="search-form" autocomplete="off">
+          <span class="search-icon">🔎</span>
+          <input
+            type="text"
+            id="search-box"
+            data-i18n-placeholder="searchPlaceholder"
+            placeholder="Search for a movie and discover similar ones..."
+          >
+        </form>
+
+        <div class="topbar-actions">
+          <!-- Language Switcher -->
+          <button class="language-switcher" id="language-switcher" type="button" aria-label="Switch language">
+            <span class="language-icon">🌐</span>
+            <span id="language-label">العربية</span>
+          </button>
+
+          <!-- User -->
+          <div class="user-chip">
+            <span id="active-user-label" data-i18n="newViewer">New Viewer</span>
+            <button type="button" class="link-btn" id="switch-user-btn" data-i18n="switch">
+              Switch
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+
+        <!-- ================= Hero (hidden on this page, kept so app.js finds it) ================= -->
+        <section class="hero" id="hero-section" hidden>
+          <div class="hero-badge" data-i18n="pickedForYou">PICKED FOR YOU</div>
+          <h1 class="hero-title" id="hero-title" data-i18n="heroTitle">Find a movie you'll love</h1>
+          <p class="hero-desc" id="hero-desc" data-i18n="heroDescription">
+            Search for a movie you love, or tell us what you like so we can build personalized recommendations for you.
+          </p>
+          <div class="hero-actions">
+            <button type="button" class="btn btn-primary" id="hero-cta-btn" data-i18n="chooseTaste">
+              Choose your taste
+            </button>
+          </div>
+        </section>
+
+        <!-- ================= Rated Movies ================= -->
+        <section class="row-section" id="Rated-results-section">
+          <div class="row-header">
+            <h2 data-i18n="ratedMovies">Rated Movies</h2>
+          </div>
+          <div class="poster-row" id="Rated-results">
+            <p class="empty-hint" data-i18n="noRatedMovies">
+              You haven't rated any movies yet.
+            </p>
+          </div>
+        </section>
+
+        <!-- ================= Search Results ================= -->
+        <section class="row-section" id="search-results-section" hidden>
+          <div class="row-header">
+            <h2 data-i18n="searchResults">Search Results</h2>
+          </div>
+          <div class="poster-row" id="search-results"></div>
+        </section>
+
+        <!-- ================= Similar Movies ================= -->
+        <section class="row-section" id="similar-section" hidden>
+          <div class="row-header">
+            <h2>
+              <span data-i18n="similarMovies">Movies with the same vibe</span>
+              as — <span id="similar-movie-name"></span>
+            </h2>
+          </div>
+          <div class="poster-row" id="similar-results"></div>
+        </section>
+
+        <!-- ================= For You (hidden on this page) ================= -->
+        <section class="row-section" id="foryou-section" hidden>
+          <div class="row-header">
+            <h2 data-i18n="recommendedForYou">Recommended for You</h2>
+          </div>
+          <div class="poster-row" id="foryou-results"></div>
+        </section>
+
+      </main>
+    </div><!-- /.main -->
+  </div><!-- /.app-shell -->
+
+  <!-- ================= Onboarding Modal ================= -->
+  <div class="modal-overlay" id="onboarding-overlay" hidden>
+    <div class="modal onboarding-modal" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+      <button class="modal-close-btn" id="modal-close-btn" type="button" aria-label="Close">✕</button>
+
+      <!-- Step: Mode Selection -->
+      <div class="onboarding-step" data-step="mode" id="step-mode">
+        <h2 id="onboarding-title">
+          <span data-i18n="welcome">Welcome 👋 Let's get to know your taste</span>
+        </h2>
+        <p class="modal-sub" data-i18n="onboardingDescription">
+          Choose one way to build your first recommendations. You can change it later.
+        </p>
+
+        <div class="mode-cards">
+          <button type="button" class="mode-card" id="mode-genres-btn">
+            <span class="mode-icon">⭐</span>
+            <span class="mode-title" data-i18n="favoriteGenresMode">Choose your favorite genres</span>
+            <span class="mode-desc" data-i18n="favoriteGenresModeDesc">The fastest way — choose 3 or more genres</span>
+          </button>
+
+          <button type="button" class="mode-card" id="mode-movies-btn">
+            <span class="mode-icon">🎬</span>
+            <span class="mode-title" data-i18n="favoriteMoviesMode">Choose movies you love</span>
+            <span class="mode-desc" data-i18n="favoriteMoviesModeDesc">More accurate — choose 3 or more movies</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Step: Genre Selection -->
+      <div class="onboarding-step" data-step="genres" id="step-genres" hidden>
+        <h2 data-i18n="chooseThreeGenres">Choose at least 3 genres</h2>
+        <p class="modal-sub">
+          <span id="genres-counter">0</span>
+          <span data-i18n="ofThree">of 3 minimum selected</span>
+        </p>
+
+        <div class="genre-grid" id="genre-grid"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="genres-back-btn" data-i18n="back">Back</button>
+          <button type="button" class="btn btn-primary" id="genres-confirm-btn" disabled data-i18n="saveAndStart">Save & Start</button>
+        </div>
+      </div>
+
+      <!-- Step: Movie Selection -->
+      <div class="onboarding-step" data-step="movies" id="step-movies" hidden>
+        <h2 data-i18n="chooseThreeMovies">Choose at least 3 movies you love</h2>
+        <p class="modal-sub">
+          <span id="movies-counter">0</span>
+          <span data-i18n="ofThree">of 3 minimum selected</span>
+        </p>
+
+        <input
+          type="text"
+          id="onboarding-movie-search"
+          class="modal-search-input"
+          data-i18n-placeholder="movieSearchPlaceholder"
+          placeholder="Search for a movie to add..."
+        >
+
+        <div class="onboarding-search-results" id="onboarding-search-results"></div>
+        <div class="picked-movies" id="picked-movies"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="movies-back-btn" data-i18n="back">Back</button>
+          <button type="button" class="btn btn-primary" id="movies-confirm-btn" disabled data-i18n="saveAndStart">Save & Start</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= Movie Details Modal ================= -->
+  <div id="movie-detail-modal" class="detail-modal-overlay" hidden>
+    <div class="detail-modal">
+      <button class="modal-close-btn" id="close-detail-modal" type="button" aria-label="Close">✕</button>
+      <img id="detail-poster" alt="" />
+      <h2 id="detail-title"></h2>
+      <p id="detail-release-runtime" class="detail-meta"></p>
+      <p id="detail-overview" class="detail-overview"></p>
+    </div>
+  </div>
+
+  <!-- ================= Templates ================= -->
+  <template id="poster-card-template">
+    <article class="poster-card">
+      <div class="poster-frame">
+        <img class="poster-img" alt="" loading="lazy">
+        <div class="poster-fallback" hidden data-i18n="noImage">No image</div>
+        <button class="poster-info-btn" title="Details">ℹ</button>
+      </div>
+      <div class="poster-title"></div>
+      <div class="poster-meta"></div>
+      <div class="poster-rate-stars"></div>
+    </article>
+  </template>
+
+  <template id="genre-pill-template">
+    <button class="genre-pill" type="button">
+      <span class="genre-pill-icon"></span>
+      <span class="genre-pill-name"></span>
+    </button>
+  </template>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

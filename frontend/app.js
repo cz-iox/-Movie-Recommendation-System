@@ -73,6 +73,8 @@
       noImage: "No image", loading: "Loading...", noResults: "No movies found.",
       apiError: "Couldn't reach the recommender API. ",
       noDetailsAvailable: "No details available for this movie",
+      ratedMovies: "Rated Movies",
+      noRatedMovies: "You haven't rated any movies yet.",
     },
     ar: {
       home: "الرئيسية", explore: "استكشاف", recommendations: "توصياتي",
@@ -100,6 +102,8 @@
       noImage: "لا توجد صورة", loading: "جاري التحميل...", noResults: "لم يتم العثور على أفلام.",
       apiError: "تعذّر الوصول لسيرفر الـ API — تأكد إن الـ FastAPI شغال.",
       noDetailsAvailable: "لا توجد تفاصيل متاحة لهذا الفيلم",
+      ratedMovies: "الأفلام المقيّمة",
+      noRatedMovies: "لم تقيّم أي فيلم بعد.",
     },
   };
 
@@ -131,6 +135,9 @@
     foryouSection: document.getElementById("foryou-section"),
     foryouResults: document.getElementById("foryou-results"),
 
+    RatedSection: document.getElementById("Rated-results-section"),
+    RatedResults: document.getElementById("Rated-results"),
+
     onboardingOverlay: document.getElementById("onboarding-overlay"),
     modalCloseBtn: document.getElementById("modal-close-btn"),
     stepMode: document.getElementById("step-mode"),
@@ -159,6 +166,7 @@
     genrePillTemplate: document.getElementById("genre-pill-template"),
   };
 
+  const isRatedPage = Boolean(dom.RatedResults);
   // ============================================================
   // 5. API Layer — real endpoints only, no silent mock fallback.
   //    A failed request throws; callers decide how to show that.
@@ -553,7 +561,7 @@ async function fetchSimilarMovies(movieTitle) {
       dom.tasteChips.appendChild(chip);
     }
 
-    loadPersonalizedRecommendations();
+    if (!isRatedPage) loadPersonalizedRecommendations();
   }
 
 async function loadPersonalizedRecommendations() {
@@ -577,6 +585,26 @@ async function loadPersonalizedRecommendations() {
     renderRow(dom.foryouResults, movies);
   } catch (err) {
     dom.foryouResults.innerHTML = `<p class="empty-hint">${t("apiError")}</p>`;
+  }
+}
+async function loadRatedMovies() {
+  dom.RatedResults.innerHTML = `<p>${t("loading")}</p>`;
+  const userToken = localStorage.getItem(USER_TOKEN_KEY);
+
+  if (!userToken || userToken === "undefined" || userToken === "null") {
+    dom.RatedResults.innerHTML = `<p class="empty-hint">${t("noRatedMovies")}</p>`;
+    return;
+  }
+
+  try {
+    const movies = await apiGet(`/ratings/${encodeURIComponent(userToken)}/movies`);
+    if (!movies.length) {
+      dom.RatedResults.innerHTML = `<p class="empty-hint">${t("noRatedMovies")}</p>`;
+      return;
+    }
+    renderRow(dom.RatedResults, movies);
+  } catch (err) {
+    dom.RatedResults.innerHTML = `<p class="empty-hint">${t("apiError")}</p>`;
   }
 }
 
@@ -638,6 +666,7 @@ async function loadPersonalizedRecommendations() {
 
     dom.navItems.forEach((item) => {
       item.addEventListener("click", (e) => {
+        if (item.getAttribute("onclick")) return;
         e.preventDefault();
         if (item.dataset.view) setView(item.dataset.view);
       });
@@ -746,8 +775,9 @@ async function getUserToken() {
     return false;
   }
   document.addEventListener("DOMContentLoaded", async () => {
-    bindEvents();
-    loadTasteFromStorage();
-    await loadUserRatings();
-    updateLanguage();
-  });
+  bindEvents();
+  loadTasteFromStorage();
+  await loadUserRatings();
+  updateLanguage();
+  if (isRatedPage) loadRatedMovies();
+});

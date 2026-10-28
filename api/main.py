@@ -73,7 +73,7 @@ def load():
         
     indices = pd.Series(movies_content.index, index=movies_content["title"])
     print("All models loaded successfully! ")
-    scheduler.add_job( scheduled_retrain, "interval", minutes=2, id="retrain_svd_job")
+    scheduler.add_job( scheduled_retrain, "interval", hours=24, id="retrain_svd_job")
     scheduler.start()
     print("Retrain scheduler started — will run every 24 hours")
 
@@ -291,6 +291,28 @@ async def get_movie_details(movie_id:int):
     }
 
     movie_details_cache[movie_id] = result
+    return result
+
+@app.get("/ratings/{user_token}/movies")
+def get_user_rated_movies(user_token: str):
+    if not os.path.isfile(RATINGS_FILE):
+        return []
+    df = pd.read_csv(RATINGS_FILE)
+    df = df[df["userToken"] == user_token]
+    if df.empty:
+        return []
+    df = df.sort_values("timestamp").drop_duplicates("movieId", keep="last")
+    df = df.sort_values("timestamp", ascending=False)
+    info = movies_content.drop_duplicates("movieId").set_index("movieId")[["title", "genres"]]
+    result = []
+    for movie_id, rating in zip(df["movieId"], df["rating"]):
+        if movie_id in info.index:
+            result.append({
+                "movieId": int(movie_id),
+                "title": info.at[movie_id, "title"],
+                "genres": info.at[movie_id, "genres"],
+                "rating": float(rating),
+            })
     return result
 
 
